@@ -1308,6 +1308,30 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     return alias;
   }
 
+  private void processLateralViewSelect(ASTNode lateralViewSelect) throws SemanticException {
+    ASTNode selExprToken = (ASTNode) lateralViewSelect.getChild(0);
+    if (selExprToken.getToken().getType() != HiveParser.TOK_SELEXPR) {
+      throw new SemanticException(ASTErrorUtils.getMsg(
+          ErrorMsg.LATERAL_VIEW_INVALID_CHILD.getMsg(), selExprToken));
+    }
+    for (Object o : selExprToken.getChildren()) {
+      ASTNode node = (ASTNode) o;
+      switch (node.getToken().getType()) {
+        case HiveParser.TOK_FUNCTION:
+          break;
+        case HiveParser.Identifier:
+          unparseTranslator.addIdentifierTranslation(node);
+          break;
+        case HiveParser.TOK_TABALIAS:
+          unparseTranslator.addIdentifierTranslation((ASTNode) node.getChild(0));
+          break;
+        default:
+          throw new SemanticException(ASTErrorUtils.getMsg(
+              ErrorMsg.LATERAL_VIEW_INVALID_CHILD.getMsg(), selExprToken));
+      }
+    }
+  }
+
   /*
    * Phase1: hold onto any CTE definitions in aliasToCTE.
    * CTE definitions are global to the Query.
@@ -1321,9 +1345,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
       ASTNode cteQry = (ASTNode) cte.getChild(0);
       String alias = unescapeIdentifier(cte.getChild(1).getText());
       ASTNode withColList = cte.getChildCount() == 3 ? (ASTNode) cte.getChild(2) : null;
-
-      String qName = qb.getId() == null ? "" : qb.getId() + ":";
-      qName += alias.toLowerCase();
+      String qName = getAliasId(alias, qb);
 
       if ( aliasToCTEs.containsKey(qName)) {
         throw new SemanticException(ASTErrorUtils.getMsg(
@@ -1682,6 +1704,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
       throw new SemanticException(ASTErrorUtils.getMsg(
           ErrorMsg.LATERAL_VIEW_INVALID_CHILD.getMsg(), lateralView));
     }
+    processLateralViewSelect((ASTNode) lateralView.getChild(0));
     alias = alias.toLowerCase();
     qb.getParseInfo().addLateralViewForAlias(alias, lateralView);
     qb.addAlias(alias);
@@ -2216,11 +2239,6 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
 
       CTEClause cte = findCTEFromName(qb, cteName, materializationAliasToCTEs);
       if (cte != null) {
-        if (ctesExpanded.contains(cteName)) {
-          throw new SemanticException("Recursive cte " + cteName +
-              " detected (cycle: " + StringUtils.join(ctesExpanded, " -> ") +
-              " -> " + cteName + ").");
-        }
         cte.reference++;
         current.parents.add(cte);
         if (cte.qbExpr != null) {
@@ -2228,10 +2246,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
         }
         cte.qbExpr = new QBExpr(cteName);
         doPhase1QBExpr(cte.cteNode, cte.qbExpr, qb.getId(), cteName, cte.withColList, materializationAliasToCTEs);
-
-        ctesExpanded.add(cteName);
         gatherCTEReferences(cte.qbExpr, cte, materializationAliasToCTEs);
-        ctesExpanded.remove(ctesExpanded.size() - 1);
       }
     }
     for (String alias : qb.getSubqAliases()) {
@@ -2239,6 +2254,20 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
     }
     for (String alias : qb.getSubqExprAliases()) {
       gatherCTEReferences(qb.getSubqExprForAlias(alias), current, materializationAliasToCTEs);
+    }
+  }
+
+  private void checkRecursiveCTE(CTEClause current, Set<String> path) throws SemanticException {
+
+    for (CTEClause child : current.parents) {
+      if (path.contains(child.alias)) {
+        throw new SemanticException("Recursive cte " + child.alias +
+            " detected (cycle: " + StringUtils.join(path, " -> ") +
+            " -> " + child.alias + ").");
+      }
+      path.add(child.alias);
+      checkRecursiveCTE(child, path);
+      path.remove(child.alias);
     }
   }
 
@@ -2252,6 +2281,7 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
       if (enableMaterialization) {
         materializationAliasToCTEs = getMaterializationMetadata(qb);
       }
+      checkRecursiveCTE(rootClause, new HashSet<>());
       getMetaData(qb, null);
       if (materializationAliasToCTEs != null && !materializationAliasToCTEs.isEmpty()) {
         this.aliasToCTEs.putAll(materializationAliasToCTEs);
@@ -8863,9 +8893,10 @@ public class SemanticAnalyzer extends BaseSemanticAnalyzer {
 
       // For Non-Native ACID tables we should convert the new values as well
       rowFieldsOffset = expressions.size();
-      if (updating(dest) && AcidUtils.isNonNativeAcidTable(table, true)) {
+      if (updating(dest) && AcidUtils.isNonNativeAcidTable(table, true)
+          && rowFields.size() >= rowFieldsOffset + columnNumber) {
         for (int i = 0; i < columnNumber; i++) {
-          ExprNodeDesc column = handleConversion(tableFields.get(i), rowFields.get(rowFieldsOffset + i), converted, dest, i);
+          ExprNodeDesc column = handleConversion(tableFields.get(i), rowFields.get(rowFieldsOffset-columnNumber + i), converted, dest, i);
           expressions.add(column);
         }
       }

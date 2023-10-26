@@ -182,9 +182,9 @@
     <postgres.version>42.5.1</postgres.version>
     <oracle.version>21.3.0.0</oracle.version>
     <opencsv.version>2.3</opencsv.version>
-    <orc.version>1.8.3</orc.version>
+    <orc.version>1.8.5</orc.version>
     <mockito-core.version>3.4.4</mockito-core.version>
-    <powermock.version>2.0.2</powermock.version>
+    <mockito-inline.version>4.11.0</mockito-inline.version>
     <mina.version>2.0.0-M5</mina.version>
     <netty.version>4.1.77.Final</netty.version>
     <netty3.version>3.10.5.Final</netty3.version>
@@ -207,7 +207,7 @@
     <velocity.version>2.3</velocity.version>
     <xerces.version>2.12.2</xerces.version>
     <xmlsec.version>2.3.0</xmlsec.version>
-    <zookeeper.version>3.7.1</zookeeper.version>
+    <zookeeper.version>3.7.2</zookeeper.version>
     <jpam.version>1.1</jpam.version>
     <felix.version>2.4.0</felix.version>
     <curator.version>5.2.0</curator.version>
