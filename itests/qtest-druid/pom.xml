@@ -21,7 +21,7 @@
   <parent>
     <artifactId>hive-it</artifactId>
     <groupId>org.apache.hive</groupId>
-    <version>4.1.0-SNAPSHOT</version>
+    <version>4.2.0-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>hive-it-druid</artifactId>
@@ -98,6 +98,10 @@
       <artifactId>druid-hdfs-storage</artifactId>
       <version>${druid.version}</version>
       <exclusions>
+        <exclusion>
+          <groupId>org.apache.hadoop</groupId>
+          <artifactId>hadoop-hdfs-client</artifactId>
+        </exclusion>
         <exclusion>
           <groupId>com.sun.jersey</groupId>
           <artifactId>jersey-servlet</artifactId>

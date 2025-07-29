@@ -423,6 +423,50 @@ public class TestHive {
   }
 
   @Test
+  public void testValidatePartitions() {
+    Map<String, String> partitionSpec = new HashMap<>();
+
+    partitionSpec.put("a", HiveConf.getVar(hiveConf, ConfVars.DEFAULT_PARTITION_NAME));
+    Assert.assertThrows(RuntimeException.class, () -> PartitionUtils.validatePartitions(hiveConf, partitionSpec));
+
+    partitionSpec.clear();
+    partitionSpec.put("a", HiveConf.getVar(hiveConf, ConfVars.DEFAULT_ZOOKEEPER_PARTITION_NAME));
+    Assert.assertThrows(RuntimeException.class, () -> PartitionUtils.validatePartitions(hiveConf, partitionSpec));
+
+    partitionSpec.clear();
+    partitionSpec.put("a", "random" + HiveConf.getVar(hiveConf, ConfVars.DEFAULT_PARTITION_NAME) + "partition");
+    PartitionUtils.validatePartitions(hiveConf, partitionSpec);
+
+    partitionSpec.clear();
+    partitionSpec.put("a", "random" + HiveConf.getVar(hiveConf, ConfVars.DEFAULT_ZOOKEEPER_PARTITION_NAME) + "partition");
+    PartitionUtils.validatePartitions(hiveConf, partitionSpec);
+
+    partitionSpec.clear();
+    partitionSpec.put("a", HiveConf.getVar(hiveConf, ConfVars.METASTORE_INT_ORIGINAL));
+    Assert.assertThrows(RuntimeException.class, () -> PartitionUtils.validatePartitions(hiveConf, partitionSpec));
+
+    partitionSpec.clear();
+    partitionSpec.put("a", HiveConf.getVar(hiveConf, ConfVars.METASTORE_INT_ARCHIVED));
+    Assert.assertThrows(RuntimeException.class, () -> PartitionUtils.validatePartitions(hiveConf, partitionSpec));
+
+    partitionSpec.clear();
+    partitionSpec.put("a", HiveConf.getVar(hiveConf, ConfVars.METASTORE_INT_EXTRACTED));
+    Assert.assertThrows(RuntimeException.class, () -> PartitionUtils.validatePartitions(hiveConf, partitionSpec));
+
+    partitionSpec.clear();
+    partitionSpec.put("a", "random_part" + HiveConf.getVar(hiveConf, ConfVars.METASTORE_INT_ORIGINAL));
+    Assert.assertThrows(RuntimeException.class, () -> PartitionUtils.validatePartitions(hiveConf, partitionSpec));
+
+    partitionSpec.clear();
+    partitionSpec.put("a", "random_part" + HiveConf.getVar(hiveConf, ConfVars.METASTORE_INT_ARCHIVED));
+    Assert.assertThrows(RuntimeException.class, () -> PartitionUtils.validatePartitions(hiveConf, partitionSpec));
+
+    partitionSpec.clear();
+    partitionSpec.put("a", "random_part" + HiveConf.getVar(hiveConf, ConfVars.METASTORE_INT_EXTRACTED));
+    Assert.assertThrows(RuntimeException.class, () -> PartitionUtils.validatePartitions(hiveConf, partitionSpec));
+  }
+
+  @Test
   public void testGetAndDropTables() throws Throwable {
     try {
       String dbName = "db_for_testgettables";
@@ -1055,6 +1099,17 @@ public class TestHive {
       Path insertedPath = new Path(insertEvent.getFiles().get(i));
       Assert.assertEquals(expectedCheckSums.get(insertedPath.getName()), checkSums.get(i));
     }
+
+    // Fire the InsertEvent with empty folder
+    hiveDb.fireInsertEvent(table, null, false,
+      Lists.newArrayList(new FileStatus(5, true, 1, 64, 100, tablePath)));
+    // Get the last Metastore event
+    InsertEvent insertEvent1 = DummyFireInsertListener.getLastEvent();
+    // Check the event
+    Assert.assertNotNull(insertEvent1);
+    // getFiles should be empty and not null
+    Assert.assertNotNull(insertEvent1.getFiles());
+    Assert.assertTrue(insertEvent1.getFiles().isEmpty());
   }
 
   private String getFileCheckSum(FileSystem fileSystem, Path p) throws Exception {

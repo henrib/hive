@@ -52,6 +52,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -69,6 +70,7 @@ public abstract class CompactorOnTezTest {
   protected IMetaStoreClient msClient;
   protected IDriver driver;
   protected boolean mmCompaction = false;
+  private final AtomicBoolean stop = new AtomicBoolean();
 
   @ClassRule
   public static TemporaryFolder folder = new TemporaryFolder();
@@ -540,5 +542,23 @@ public abstract class CompactorOnTezTest {
     protected void dropTable(String tblName) throws Exception {
       executeStatementOnDriver("drop table " + tblName, driver);
     }
+  }
+
+  protected Initiator createInitiator() throws Exception {
+    TestTxnDbUtil.setConfValues(conf);
+    Initiator t = new Initiator();
+    t.setConf(conf);
+    stop.set(true);
+    t.init(stop);
+    return t;
+  }
+
+  static Worker createWorker(HiveConf conf) throws  Exception {
+    HiveConf hiveConf = new HiveConf(conf);
+    hiveConf.setBoolVar(HiveConf.ConfVars.COMPACTOR_CRUD_QUERY_BASED, true);
+    Worker t = new Worker();
+    t.setConf(hiveConf);
+    t.init(new AtomicBoolean(true));
+    return t;
   }
 }

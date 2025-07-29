@@ -1052,17 +1052,22 @@ public class TestHplSqlViaBeeLine {
   @Test
   public void testHplSqlExitConditionHandler() throws Throwable {
     String scriptText =
-        "CREATE PROCEDURE p1()\n" +
+        "DROP TABLE IF EXISTS result;\n" +
+            "CREATE TABLE result (s string);\n" +
+            "CREATE PROCEDURE p1()\n" +
             "BEGIN\n" +
-            " PRINT('Exit CONDITION Handler invoked.');\n" +
+            " INSERT INTO result VALUES('Exit CONDITION Handler invoked.');\n" +
             "END;\n" +
-            "DECLARE cnt_condition CONDITION;\n" +
-            "DECLARE EXIT HANDLER FOR cnt_condition\n" +
-            " p1();\n" +
-            "IF 1 <> 2 THEN\n" +
-            " SIGNAL cnt_condition;\n" +
-            "END IF;";
-    testScriptFile(scriptText, args(), "Exit CONDITION Handler invoked.", OutStream.ERR);
+            "CREATE PROCEDURE p2()" +
+            "BEGIN\n" +
+            " DECLARE exit_condition CONDITION;\n" +
+            " DECLARE EXIT HANDLER FOR exit_condition\n" +
+            "   p1();\n" +
+            " SIGNAL exit_condition;\n" +
+            "END;\n" +
+            "p2();" +
+            "SELECT * FROM result;";
+    testScriptFile(scriptText, args(), "Exit CONDITION Handler invoked.");
   }
 
   @Test
@@ -1413,10 +1418,10 @@ public class TestHplSqlViaBeeLine {
     try (PrintStream os = new PrintStream(new FileOutputStream(scriptFile))) {
       os.print(scriptText);
     }
-    List<String> copy = new ArrayList<>(argList);
-    copy.add("-f");
-    copy.add(scriptFile.getAbsolutePath());
-    String output = testCommandLineScript(copy, null, outStream);
+    List<String> finalArgs = new ArrayList<>(argList);
+    finalArgs.addAll(Arrays.asList("-f", scriptFile.getAbsolutePath()));
+
+    String output = testCommandLineScript(finalArgs, outStream);
     if (scriptText.equals("SELECT UNIX_TIMESTAMP()")) {
       Pattern pattern = Pattern.compile("\\|\\s*(\\d+)\\s*\\|");
       Matcher matcher = pattern.matcher(output);

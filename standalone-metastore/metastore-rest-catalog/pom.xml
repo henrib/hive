@@ -14,7 +14,7 @@
   <parent>
     <artifactId>hive-standalone-metastore</artifactId>
     <groupId>org.apache.hive</groupId>
-    <version>4.1.0-SNAPSHOT</version>
+    <version>4.2.0-SNAPSHOT</version>
   </parent>
   <modelVersion>4.0.0</modelVersion>
   <artifactId>hive-standalone-metastore-rest-catalog</artifactId>
@@ -23,7 +23,6 @@
     <standalone.metastore.path.to.root>..</standalone.metastore.path.to.root>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <log4j2.debug>false</log4j2.debug>
-    <hive.version>${project.parent.version}</hive.version>
     <iceberg.version>1.9.1</iceberg.version>
   </properties>
   <dependencies>

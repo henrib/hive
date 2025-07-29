@@ -124,6 +124,7 @@ import org.apache.hadoop.hive.metastore.api.SourceTable;
 import org.apache.hadoop.hive.metastore.api.UpdateTransactionalStatsRequest;
 import org.apache.hadoop.hive.metastore.api.NoSuchObjectException;
 import org.apache.hadoop.hive.metastore.Batchable;
+import org.apache.hadoop.hive.metastore.client.builder.HiveMetaStoreClientBuilder;
 import org.apache.hadoop.hive.metastore.conf.MetastoreConf;
 import org.apache.hadoop.hive.metastore.utils.RetryUtilities;
 import org.apache.hadoop.hive.ql.Context;
@@ -136,8 +137,6 @@ import org.apache.hadoop.hive.metastore.HiveMetaStoreClient;
 import org.apache.hadoop.hive.metastore.HiveMetaStoreUtils;
 import org.apache.hadoop.hive.metastore.IMetaStoreClient;
 import org.apache.hadoop.hive.metastore.PartitionDropOptions;
-import org.apache.hadoop.hive.metastore.RetryingMetaStoreClient;
-import org.apache.hadoop.hive.metastore.SynchronizedMetaStoreClient;
 import org.apache.hadoop.hive.metastore.TableType;
 import org.apache.hadoop.hive.metastore.Warehouse;
 import org.apache.hadoop.hive.metastore.api.AggrStats;
@@ -275,7 +274,6 @@ public class Hive implements AutoCloseable {
 
   private HiveConf conf = null;
   private IMetaStoreClient metaStoreClient;
-  private SynchronizedMetaStoreClient syncMetaStoreClient;
   private UserGroupInformation owner;
   private boolean isAllowClose = true;
   private final static int DEFAULT_BATCH_DECAYING_FACTOR = 2;
@@ -506,11 +504,9 @@ public class Hive implements AutoCloseable {
 
   private static boolean isCompatible(Hive db, HiveConf c, boolean isFastCheck) {
     if (isFastCheck) {
-      return (db.metaStoreClient == null || db.metaStoreClient.isSameConfObj(c))
-          && (db.syncMetaStoreClient == null || db.syncMetaStoreClient.isSameConfObj(c));
+      return db.metaStoreClient == null || db.metaStoreClient.isSameConfObj(c);
     } else {
-      return (db.metaStoreClient == null || db.metaStoreClient.isCompatibleWith(c))
-          && (db.syncMetaStoreClient == null || db.syncMetaStoreClient.isCompatibleWith(c));
+      return db.metaStoreClient == null || db.metaStoreClient.isCompatibleWith(c);
     }
   }
 
@@ -616,8 +612,7 @@ public class Hive implements AutoCloseable {
         metaStoreClient.close();
         metaStoreClient = null;
       }
-      // syncMetaStoreClient is wrapped on metaStoreClient. So, it is enough to close it once.
-      syncMetaStoreClient = null;
+
       if (owner != null) {
         owner = null;
       }
@@ -699,7 +694,7 @@ public class Hive implements AutoCloseable {
    * @param name
    * @throws NoSuchObjectException
    * @throws HiveException
-   * @see org.apache.hadoop.hive.metastore.HiveMetaStoreClient#dropDatabase(java.lang.String)
+   * @see HiveMetaStoreClient#dropDatabase(java.lang.String)
    */
   public void dropDatabase(String name) throws HiveException, NoSuchObjectException {
     dropDatabase(name, true, false, false);
@@ -1026,7 +1021,7 @@ public class Hive implements AutoCloseable {
    * @param name
    * @throws NoSuchObjectException
    * @throws HiveException
-   * @see org.apache.hadoop.hive.metastore.HiveMetaStoreClient#dropDataConnector(java.lang.String, boolean, boolean)
+   * @see HiveMetaStoreClient#dropDataConnector(java.lang.String, boolean, boolean)
    */
   public void dropDataConnector(String name, boolean ifNotExists) throws HiveException, NoSuchObjectException {
     dropDataConnector(name, ifNotExists, true);
@@ -1162,7 +1157,7 @@ public class Hive implements AutoCloseable {
           LOG.warn("Cannot get a table snapshot for " + tblName);
         }
       }
-      getSynchronizedMSC().alter_partition(catName,
+      getMSC().alter_partition(catName,
           dbName, tblName, newPart.getTPartition(), environmentContext,
           tableSnapshot == null ? null : tableSnapshot.getValidWriteIdList());
 
@@ -2914,7 +2909,7 @@ public class Hive implements AutoCloseable {
                                        Table tbl, TableSnapshot tableSnapshot) throws HiveException{
     try {
       LOG.debug("Adding new partition " + newTPart.getSpec());
-      getSynchronizedMSC().add_partition(newTPart.getTPartition());
+      getMSC().add_partition(newTPart.getTPartition());
     } catch (AlreadyExistsException aee) {
       // With multiple users concurrently issuing insert statements on the same partition has
       // a side effect that some queries may not see a partition at the time when they're issued,
@@ -2961,7 +2956,7 @@ public class Hive implements AutoCloseable {
         partitions.forEach(partition -> debugMsg.append(partition.getSpec() + " "));
         LOG.debug(debugMsg.toString());
       }
-      getSynchronizedMSC().add_partitions(partitions.stream().map(Partition::getTPartition)
+      getMSC().add_partitions(partitions.stream().map(Partition::getTPartition)
               .collect(Collectors.toList()));
     } catch(AlreadyExistsException aee) {
       // With multiple users concurrently issuing insert statements on the same partition has
@@ -3083,7 +3078,7 @@ public class Hive implements AutoCloseable {
       ec.putToProperties(StatsSetupConst.DO_NOT_UPDATE_STATS, StatsSetupConst.TRUE);
     }
     LOG.debug("Altering existing partition " + newTPart.getSpec());
-    getSynchronizedMSC().alter_partition(tbl.getCatName(),
+    getMSC().alter_partition(tbl.getCatName(),
         tbl.getDbName(), tbl.getTableName(), newTPart.getTPartition(), new EnvironmentContext(),
         tableSnapshot == null ? null : tableSnapshot.getValidWriteIdList());
   }
@@ -3111,7 +3106,7 @@ public class Hive implements AutoCloseable {
       validWriteIdList = tableSnapshot.getValidWriteIdList();
       writeId = tableSnapshot.getWriteId();
     }
-    getSynchronizedMSC().alter_partitions(tbl.getCatName(), tbl.getDbName(), tbl.getTableName(),
+    getMSC().alter_partitions(tbl.getCatName(), tbl.getDbName(), tbl.getTableName(),
             partitions.stream().map(Partition::getTPartition).collect(Collectors.toList()),
             ec, validWriteIdList, writeId);
   }
@@ -3473,14 +3468,14 @@ private void constructOneLBLocationMap(FileStatus fSta,
     WriteNotificationLogBatchRequest rqst = new WriteNotificationLogBatchRequest(tbl.getCatName(), tbl.getDbName(),
             tbl.getTableName(), requestList);
     try {
-      get(conf).getSynchronizedMSC().addWriteNotificationLogInBatch(rqst);
+      Hive.get(conf).getMSC().addWriteNotificationLogInBatch(rqst);
     } catch (TApplicationException e) {
       int type = e.getType();
       if (type == TApplicationException.UNKNOWN_METHOD || type == TApplicationException.WRONG_METHOD_NAME) {
         // For older HMS, if the batch API is not supported, fall back to older API.
         LOG.info("addWriteNotificationLogInBatch failed with ", e);
         for (WriteNotificationLogRequest request : requestList) {
-          get(conf).getSynchronizedMSC().addWriteNotificationLog(request);
+          Hive.get(conf).getMSC().addWriteNotificationLog(request);
         }
         supported = false;
       } else {
@@ -3772,7 +3767,7 @@ private void constructOneLBLocationMap(FileStatus fSta,
     org.apache.hadoop.hive.metastore.api.Partition tpart = null;
     try {
       String userName = getUserName();
-      tpart = getSynchronizedMSC().getPartitionWithAuthInfo(tbl.getDbName(),
+      tpart = getMSC().getPartitionWithAuthInfo(tbl.getDbName(),
           tbl.getTableName(), pvals, userName, getGroupNames());
     } catch (NoSuchObjectException nsoe) {
       // this means no partition exists for the given partition
@@ -3789,11 +3784,11 @@ private void constructOneLBLocationMap(FileStatus fSta,
           LOG.debug("creating partition for table " + tbl.getTableName()
                     + " with partition spec : " + partSpec);
           try {
-            tpart = getSynchronizedMSC().appendPartition(tbl.getDbName(), tbl.getTableName(), pvals);
+            tpart = getMSC().appendPartition(tbl.getDbName(), tbl.getTableName(), pvals);
           } catch (AlreadyExistsException aee) {
             LOG.debug("Caught already exists exception, trying to alter partition instead");
             String userName = getUserName();
-            tpart = getSynchronizedMSC().getPartitionWithAuthInfo(tbl.getDbName(),
+            tpart = getMSC().getPartitionWithAuthInfo(tbl.getDbName(),
               tbl.getTableName(), pvals, userName, getGroupNames());
             alterPartitionSpec(tbl, partSpec, tpart, inheritTableSpecs, partPath);
           } catch (Exception e) {
@@ -3803,7 +3798,7 @@ private void constructOneLBLocationMap(FileStatus fSta,
               // hcatalog client uses
               LOG.debug("Caught JDO exception, trying to alter partition instead");
               String userName = getUserName();
-              tpart = getSynchronizedMSC().getPartitionWithAuthInfo(tbl.getDbName(),
+              tpart = getMSC().getPartitionWithAuthInfo(tbl.getDbName(),
                 tbl.getTableName(), pvals, userName, getGroupNames());
               if (tpart == null) {
                 // This means the exception was caused by something other than a race condition
@@ -3916,7 +3911,7 @@ private void constructOneLBLocationMap(FileStatus fSta,
     rqst.setPartitionVals(partitionVals);
 
     if (requestList == null) {
-      get(conf).getSynchronizedMSC().addWriteNotificationLog(rqst);
+      Hive.get(conf).getMSC().addWriteNotificationLog(rqst);
     } else {
       requestList.add(rqst);
     }
@@ -3963,7 +3958,7 @@ private void constructOneLBLocationMap(FileStatus fSta,
     }
   }
 
-  private void fireInsertEvent(Table tbl, Map<String, String> partitionSpec, boolean replace, List<FileStatus> newFiles)
+  void fireInsertEvent(Table tbl, Map<String, String> partitionSpec, boolean replace, List<FileStatus> newFiles)
       throws HiveException {
     if (conf.getBoolVar(ConfVars.FIRE_EVENTS_FOR_DML)) {
       LOG.debug("Firing dml insert event");
@@ -3976,11 +3971,10 @@ private void constructOneLBLocationMap(FileStatus fSta,
         FireEventRequestData data = new FireEventRequestData();
         InsertEventRequestData insertData = new InsertEventRequestData();
         insertData.setReplace(replace);
+        insertData.setFilesAdded(new ArrayList());
         data.setInsertData(insertData);
         if (newFiles != null && !newFiles.isEmpty()) {
           addInsertFileInformation(newFiles, fileSystem, insertData);
-        } else {
-          insertData.setFilesAdded(new ArrayList<String>());
         }
         FireEventRequest rqst = new FireEventRequest(true, data);
         rqst.setDbName(tbl.getDbName());
@@ -3992,7 +3986,7 @@ private void constructOneLBLocationMap(FileStatus fSta,
           }
           rqst.setPartitionVals(partVals);
         }
-        getSynchronizedMSC().fireListenerEvent(rqst);
+        getMSC().fireListenerEvent(rqst);
       } catch (IOException | TException e) {
         throw new HiveException(e);
       }
@@ -5203,7 +5197,7 @@ private void constructOneLBLocationMap(FileStatus fSta,
   public void recycleDirToCmPath(Path dataPath, boolean isPurge) throws HiveException {
     try {
       CmRecycleRequest request = new CmRecycleRequest(dataPath.toString(), isPurge);
-      getSynchronizedMSC().recycleDirToCmPath(request);
+      getMSC().recycleDirToCmPath(request);
     } catch (Exception e) {
       throw new HiveException(e);
     }
@@ -5994,6 +5988,7 @@ private void constructOneLBLocationMap(FileStatus fSta,
    * @throws HiveMetaException
    *           if a working client can't be created
    */
+  @SuppressWarnings("squid:S2095")
   private IMetaStoreClient createMetaStoreClient(boolean allowEmbedded) throws MetaException {
 
     HiveMetaHookLoader hookLoader = new HiveMetaHookLoader() {
@@ -6006,12 +6001,19 @@ private void constructOneLBLocationMap(FileStatus fSta,
       }
     };
 
-    if (conf.getBoolVar(ConfVars.METASTORE_FASTPATH)) {
-      return new SessionHiveMetaStoreClient(conf, hookLoader, allowEmbedded);
-    } else {
-      return RetryingMetaStoreClient.getProxy(conf, hookLoader, metaCallTimeMap,
-          SessionHiveMetaStoreClient.class.getName(), allowEmbedded);
+    HiveMetaStoreClientBuilder msClientBuilder = new HiveMetaStoreClientBuilder(conf)
+        .newThriftClient(allowEmbedded)
+        .enhanceWith(client ->
+            HiveMetaStoreClientWithLocalCache.newClient(conf, client))
+        .enhanceWith(client ->
+            SessionHiveMetaStoreClient.newClient(conf, client))
+        .withHooks(hookLoader)
+        .threadSafe();
+
+    if (!conf.getBoolVar(ConfVars.METASTORE_FASTPATH)) {
+      msClientBuilder = msClientBuilder.withRetry(metaCallTimeMap);
     }
+    return msClientBuilder.build();
   }
 
   @Nullable
@@ -6045,19 +6047,6 @@ private void constructOneLBLocationMap(FileStatus fSta,
     public SchemaException(String message) {
       super(message);
     }
-  }
-
-  /**
-   * @return synchronized metastore client
-   * @throws MetaException
-   */
-  @LimitedPrivate(value = {"Hive"})
-  @Unstable
-  public synchronized SynchronizedMetaStoreClient getSynchronizedMSC() throws MetaException {
-    if (syncMetaStoreClient == null) {
-      syncMetaStoreClient = new SynchronizedMetaStoreClient(getMSC(true, false));
-    }
-    return syncMetaStoreClient;
   }
 
   /**
@@ -6113,11 +6102,6 @@ private void constructOneLBLocationMap(FileStatus fSta,
           t = t.getCause();
         }
         throw ex;
-      }
-      String metaStoreUris = conf.getVar(HiveConf.ConfVars.METASTORE_URIS);
-      if (!org.apache.commons.lang3.StringUtils.isEmpty(metaStoreUris)) {
-        // get a synchronized wrapper if the meta store is remote.
-        metaStoreClient = HiveMetaStoreClient.newSynchronizedClient(metaStoreClient);
       }
     }
     return metaStoreClient;

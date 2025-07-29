@@ -27,10 +27,11 @@ import org.apache.commons.cli.Option;
 import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
+import org.apache.hadoop.util.ExitUtil;
+import org.jline.terminal.TerminalBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import jline.TerminalFactory;
 
 class HiveMetaToolCommandLine {
   private static final Logger LOGGER = LoggerFactory.getLogger(HiveMetaToolCommandLine.class.getName());
@@ -146,12 +147,12 @@ class HiveMetaToolCommandLine {
     } catch (Exception e) {
       LOGGER.error("Parsing the command line arguments failed", e);
       printUsage();
-      System.exit(1);
+      ExitUtil.terminate(1);
     }
 
     if (cl.isHelp()) {
       printUsage();
-      System.exit(0);
+      ExitUtil.terminate(0);
     }
 
     return cl;
@@ -214,7 +215,7 @@ class HiveMetaToolCommandLine {
     HelpFormatter hf = new HelpFormatter();
     try {
       int width = hf.getWidth();
-      int jlineWidth = TerminalFactory.get().getWidth();
+      int jlineWidth = TerminalBuilder.terminal().getWidth();
       width = Math.min(160, Math.max(jlineWidth, width));
       hf.setWidth(width);
     } catch (Throwable t) { // Ignore
