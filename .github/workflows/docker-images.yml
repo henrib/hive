@@ -42,6 +42,7 @@ permissions:
 
 env:
   DEVELOCITY_ACCESS_KEY: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
+  MAVEN_OPTS: '-Ddevelocity.enabled=false'
 
 jobs:
   buildAndPush:
